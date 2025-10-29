@@ -28,22 +28,28 @@ from utils.args import argVar
 
 from models.WeightedFusion import WeightFusion, WFusionTrain
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+np.bool = bool  # temporary fix for old DGL / NumPy compatibility
 
 def main():
     final_ap=[]
     final_auc=[]
     for i in tqdm((1,)):
         args = argVar()
-        # print(args)
+        print(args)
         # prepare data
+        print("passed here")
         graph_dgl, graph_pyg, train_mask, val_mask, test_mask = loadDataset(dataset=args.dataset, train_ratio=args.train_ratio)
         in_feats = graph_dgl.ndata['feature'].shape[1]
         num_classes = 2
 
         if args.GuiDDPM_sample_with_guidance:
-            syn_relation_filename = f"./Generation/SynRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_subgraphsize_{args.nodes_per_subgraph}_guided.pt"
+            # syn_relation_filename = f"./Generation/SynRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_subgraphsize_{args.nodes_per_subgraph}_guided.pt"
+            syn_relation_filename = f"./Generation/SynRelation_amazon_100Samplesteps_6000Trainsteps_subgraphsize_32_guided.pt"
         else:
             syn_relation_filename = f"./Generation/SynRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_subgraphsize_{args.nodes_per_subgraph}_unguided.pt"
+        syn_relation_filename = f"./Generation/SynRelation_amazon_100Samplesteps_6000Trainsteps_subgraphsize_32_guided.pt"
 
         # syn_relation_filename='./Generation/ddpm_yelp_dict_even-v2.pt'
 
@@ -54,8 +60,8 @@ def main():
         color_print(f'!!!!! Strat gdc augment')
         graph_gdc_list=[]
         for avg_degree in tqdm(args.WFusion_gdc_syn_avg_degree):
-            filename=f'./Generation/GDCAugGraph/GDC_SynRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_avgdegree_{avg_degree}.pt'
-
+            # filename=f'./Generation/GDCAugGraph/GDC_SynRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_avgdegree_{avg_degree}.pt'
+            filename = f"./Generation/SynRelation_amazon_100Samplesteps_6000Trainsteps_subgraphsize_32_guided.pt  "
             if os.path.exists(filename):
                 gdc_aug_graph=torch.load(filename)
                 color_print(f'gdc_aud{len(graph_gdc_list)+1} is load from {filename}') 
@@ -66,7 +72,8 @@ def main():
             graph_gdc_list.append(gdc_aug_graph)
 
         for avg_degree in tqdm(args.WFusion_gdc_raw_avg_degree):
-            filename=f'./Generation/GDCAugGraph/GDC_RawRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_avgdegree_{avg_degree}.pt'
+            # filename=f'./Generation/GDCAugGraph/GDC_RawRelation_{args.dataset}_{args.GuiDDPM_sample_diffusion_steps}Samplesteps_{args.GuiDDPM_train_steps}Trainsteps_avgdegree_{avg_degree}.pt'
+            filename = f"./Generation/SynRelation_amazon_100Samplesteps_6000Trainsteps_subgraphsize_32_guided.pt  "
 
             if os.path.exists(filename):
                 gdc_aug_graph=torch.load(filename)
@@ -98,4 +105,5 @@ def main():
 
 
 if __name__=='__main__':
+    print("Current working directory:", os.getcwd())
     main()

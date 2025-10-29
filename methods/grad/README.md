@@ -6,7 +6,7 @@
 
 Several generation results of amazon and yelp can be find in https://huggingface.co/Muyiiiii-HF/WWW25-Grad/tree/main .
 
-
+ 
 
 ## Requirements
 
