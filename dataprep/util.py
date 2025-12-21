@@ -95,3 +95,63 @@ def filter_dict(d: dict, substring: str):
     list_in_list =[value for key, value in d.items() if substring in str(key)]
     return [item for sublist in list_in_list for item in sublist]
 
+import pandas as pd
+
+def gather_suspicious_network(df, start_node, max_depth=None):
+    """
+    Recursively gather all suspicious nodes (Is Laundering == 1)
+    connected to a given node.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Transaction dataset with columns:
+        ['From_Node', 'To_Node', 'Is Laundering']
+    start_node : str
+        Node ID to start from (e.g., 'BANK1_12345')
+    max_depth : int or None
+        Optional depth limit for traversal.
+
+    Returns
+    -------
+    connected_df : pd.DataFrame
+        Subset of df with only suspicious connected transactions.
+    connected_nodes : set
+        All suspicious connected nodes found.
+    """
+
+    # Filter only suspicious transactions
+    suspicious_df = df.copy()
+    # suspicious_df = df[df["Is Laundering"] == 1].copy()
+    # print(suspicious_df.head())
+    if start_node not in set(suspicious_df["From_Node"]) | set(suspicious_df["To_Node"]):
+        raise ValueError(f"Node '{start_node}' not found among suspicious nodes.")
+
+    connected_nodes = {start_node}
+    frontier = {start_node}
+    depth = 0
+
+    while frontier and (max_depth is None or depth < max_depth):
+        # Find all transactions involving current frontier nodes
+        mask = suspicious_df["From_Node"].isin(frontier) | suspicious_df["To_Node"].isin(frontier)
+        subset = suspicious_df[mask]
+
+        # Gather all suspicious nodes connected to these
+        new_nodes = set(subset["From_Node"]) | set(subset["To_Node"])
+        new_nodes -= connected_nodes
+
+        if not new_nodes:
+            break
+
+        connected_nodes |= new_nodes
+        frontier = new_nodes
+        depth += 1
+
+    connected_df = suspicious_df[
+        suspicious_df["From_Node"].isin(connected_nodes)
+        | suspicious_df["To_Node"].isin(connected_nodes)
+    ]
+
+    return connected_df, connected_nodes
+
+

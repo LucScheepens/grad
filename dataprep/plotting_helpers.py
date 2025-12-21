@@ -114,3 +114,61 @@ def plot_laundering_pattern(key, transactions):
     plt.close()
 
     print(f"✅ Saved plot for '{key}' to: {out_path}")
+
+
+def visualize_suspicious_network(connected_df, start_node, save_folder="suspicious_plots"):
+    """
+    Visualize and save the suspicious subnetwork as a PNG image.
+
+    Parameters
+    ----------
+    connected_df : pd.DataFrame
+        Output from gather_suspicious_network
+    start_node : str
+        The node where the search started
+    save_folder : str
+        Folder where the plot will be saved
+    """
+    os.makedirs(save_folder, exist_ok=True)
+
+    # Create a directed graph
+    G = nx.from_pandas_edgelist(
+        connected_df,
+        source="From_Node",
+        target="To_Node",
+        create_using=nx.DiGraph()
+    )
+
+    # Color nodes (all suspicious = red, start node = gold)
+    node_colors = []
+    for node in G.nodes():
+        if node == start_node:
+            node_colors.append("gold")
+        else:
+            node_colors.append("red")
+
+    plt.figure(figsize=(10, 8))
+    pos = nx.spring_layout(G, k=0.4, seed=42)
+
+    nx.draw(
+        G,
+        pos,
+        with_labels=True,
+        node_color=node_colors,
+        node_size=800,
+        font_size=8,
+        font_weight="bold",
+        arrows=True,
+        alpha=0.8,
+    )
+
+    plt.title(f"Suspicious Network starting from {start_node}", fontsize=12)
+    plt.tight_layout()
+
+    # Save plot
+    save_path = os.path.join(save_folder, f"suspicious_network_{start_node}.png")
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"📈 Saved visualization to {save_path}")
+
+    
