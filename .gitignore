@@ -9,7 +9,7 @@ data/*
 
 pattern_plots/
 entity_pattern_plots/
-
+suspicious_plots/
 config/base_cfg.yaml
 
 logs

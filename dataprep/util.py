@@ -1,5 +1,7 @@
 import os
 import re
+import networkx as nx
+import matplotlib.pyplot as plt
 
 def create_pattern_dict(FILE_PATH):
     """
@@ -154,4 +156,67 @@ def gather_suspicious_network(df, start_node, max_depth=None):
 
     return connected_df, connected_nodes
 
+def generate_pattern(pattern_type):
+    if pattern_type == "Bipartite":
+        left_nodes = ["BANK1_10001", "BANK1_10002"]
+        right_nodes = ["BANK2_20001", "BANK2_20002", "BANK2_20003"]
 
+        transactions = [
+            # From_Node, To_Node, Is_Laundering
+            (left_nodes[0], right_nodes[0], 1),
+            (left_nodes[0], right_nodes[1], 1),
+            (left_nodes[0], right_nodes[2], 1),
+            (left_nodes[1], right_nodes[1], 1),
+            (left_nodes[1], right_nodes[2], 1),
+            (left_nodes[1], right_nodes[0], 1),
+        ]
+    G = nx.DiGraph()
+    G.add_nodes_from(left_nodes, bipartite=0)
+    G.add_nodes_from(right_nodes, bipartite=1)
+
+    for u, v, is_laundering in transactions:
+        G.add_edge(u, v, laundering=is_laundering)
+
+    # -----------------------------
+    # Programmatic bipartite layout
+    # -----------------------------
+    def bipartite_stacked_layout(G, left_nodes, right_nodes, x_gap=4.0, y_gap=2.0):
+        pos = {}
+
+        for i, node in enumerate(left_nodes):
+            pos[node] = (0.0, -i * y_gap)
+
+        for i, node in enumerate(right_nodes):
+            pos[node] = (x_gap, -i * y_gap)
+
+        return pos
+
+    pos = bipartite_stacked_layout(G, left_nodes, right_nodes)
+
+    # -----------------------------
+    # Styling
+    # -----------------------------
+    edge_colors = [
+        "red" if G[u][v]["laundering"] == 1 else "black"
+        for u, v in G.edges()
+    ]
+
+    # -----------------------------
+    # Plot
+    # -----------------------------
+    plt.figure(figsize=(8, 6))
+
+    nx.draw(
+        G,
+        pos,
+        with_labels=True,
+        node_size=3000,
+        font_size=9,
+        edge_color=edge_colors,
+        arrows=True,
+    )
+
+    plt.title("Bipartite Transaction Network")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
