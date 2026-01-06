@@ -171,4 +171,28 @@ def visualize_suspicious_network(connected_df, start_node, save_folder="suspicio
     plt.close()
     print(f"📈 Saved visualization to {save_path}")
 
+def plot_generated_data(G, pos, pattern_type):
+
+    edge_colors = [
+        "red" if G[u][v]["laundering"] == 1 else "black"
+        for u, v in G.edges()
+    ]
+
+    plt.figure(figsize=(8, 6))
+
+    nx.draw(
+        G,
+        pos,
+        with_labels=True,
+        node_size=3000,
+        font_size=9,
+        edge_color=edge_colors,
+        arrows=True,
+    )
+
+    plt.title(f"{pattern_type} Transaction Network")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
     
