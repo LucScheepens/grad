@@ -1,0 +1,15 @@
+*.o
+.idea/
+build/
+.vscode/
+out/
+imgs/
+test/
+extract*
+log/
+logs/
+*.mp4
+*.h5
+data
+*.log
+*.txt
