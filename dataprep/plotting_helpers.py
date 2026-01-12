@@ -174,7 +174,7 @@ def visualize_suspicious_network(connected_df, start_node, save_folder="suspicio
 def plot_generated_data(G, pos, pattern_type):
 
     edge_colors = [
-        "red" if G[u][v]["laundering"] == 1 else "black"
+        "red" if G[u][v]["Is Laundering"] == 1 else "black"
         for u, v in G.edges()
     ]
 

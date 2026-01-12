@@ -2,6 +2,7 @@ import os
 import re
 import networkx as nx
 import matplotlib.pyplot as plt
+import json
 
 def create_pattern_dict(FILE_PATH):
     """
@@ -155,3 +156,28 @@ def gather_suspicious_network(df, start_node, max_depth=None):
     ]
 
     return connected_df, connected_nodes
+
+def create_frequency_dict(df, save = False, node_column="From_Node"):
+    """
+    Create a frequency dictionary counting occurrences of each node.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing transaction data.
+    node_column : str
+        Column name to count frequencies from.
+
+    Returns
+    -------
+    freq_dict : dict
+        Dictionary with node IDs as keys and their counts as values.
+    """
+    freq_series = df[node_column].value_counts()
+    freq_dict = freq_series.to_dict()
+
+    if save == True:
+        with open(f"{df}_{node_column}.txt", "w") as f:
+            json.dump(freq_dict, f, indent=4)
+
+    return freq_dict

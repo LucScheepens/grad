@@ -75,6 +75,17 @@ def generate_pattern(pattern_type, n_left=2, n_right=3, laudering=1):
         # Create a custom layout for stacked pattern
         pos = stacked_layout(left_nodes, middle_nodes, right_nodes)
 
+    elif pattern_type == "fan_out":
+        left_nodes = [f"{generate_bank_id()}" for i in range(1)]
+        right_nodes = [f"{generate_bank_id()}" for i in range(n_right)]
+
+        transactions = [
+            (left_nodes[0], r, laudering)
+            for r in right_nodes
+        ]
+        pos = bipartite_stacked_layout(left_nodes, right_nodes)
+    
+
     G = nx.DiGraph()
     G.add_nodes_from(left_nodes, bipartite=0)
     G.add_nodes_from(right_nodes, bipartite=1)
@@ -83,3 +94,51 @@ def generate_pattern(pattern_type, n_left=2, n_right=3, laudering=1):
         G.add_edge(u, v, laundering=is_laundering)
 
     return G, pos
+
+# def generate_pattern_in_graph(transactions):
+#     pattern_types = ["Bipartite", "Stacked", "fan_out"]
+#     pattern_type = random.choice(pattern_types)
+    
+#     random.randint(0, len(transactions))
+
+#     G, pos = generate_pattern(pattern_type)
+
+#     return G, pos, pattern_type
+
+def generate_pattern_in_graph(G, pattern_type='random'):
+    """
+    Selects a random edge in G, removes it,
+    and replaces it with a laundering pattern
+    connecting the same source and destination.
+    """
+
+    u, v = random.choice(list(G.edges()))
+
+    G.remove_edge(u, v)
+    if pattern_type == 'random':
+        pattern_types = ["Bipartite", "Stacked", "fan_out"]
+        pattern_type = random.choice(pattern_types)
+
+    pattern_graph, pos = generate_pattern(pattern_type)
+
+    pattern_nodes = list(pattern_graph.nodes())
+
+    in_degrees = dict(pattern_graph.in_degree())
+    out_degrees = dict(pattern_graph.out_degree())
+
+    entry_nodes = [n for n in pattern_nodes if in_degrees[n] == 0]
+    exit_nodes  = [n for n in pattern_nodes if out_degrees[n] == 0]
+
+    for n in pattern_nodes:
+        G.add_node(n)
+
+    for x, y, data in pattern_graph.edges(data=True):
+        G.add_edge(x, y, laundering=1)
+
+    for n in entry_nodes:
+        G.add_edge(u, n, laundering=1)
+
+    for n in exit_nodes:
+        G.add_edge(n, v, laundering=1)
+
+    return G, pos, pattern_type
