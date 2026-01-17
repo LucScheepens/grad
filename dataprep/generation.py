@@ -30,6 +30,7 @@ def generate_bank_id():
     # length of the hex block (8 or 9, based on your samples)
     with open("Bank_dict.txt", "r") as f:
         bank_dict = f.read()
+        
     bank_dict = json.loads(bank_dict)
 
     prefix = random.choices(list(bank_dict.keys()), weights=list(bank_dict.values()))[0]
@@ -85,6 +86,34 @@ def generate_pattern(pattern_type, n_left=2, n_right=3, laudering=1):
         ]
         pos = bipartite_stacked_layout(left_nodes, right_nodes)
     
+    elif pattern_type == "fan_in":
+        left_nodes = [f"{generate_bank_id()}" for i in range(n_right)]
+        right_nodes = [f"{generate_bank_id()}" for i in range(1)]
+
+        transactions = [
+            (l, right_nodes[0], laudering)
+            for l in left_nodes
+        ]
+        pos = bipartite_stacked_layout(left_nodes, right_nodes)
+
+    elif pattern_type == "random":
+        total_nodes = n_left + n_right
+        nodes = [f"{generate_bank_id()}" for i in range(total_nodes)]
+
+        transactions = []
+        for _ in range(n_left * n_right):
+            u = random.choice(nodes)
+            v = random.choice(nodes)
+            if u != v:
+                transactions.append((u, v, laudering))
+
+        pos = nx.spring_layout(
+            nx.DiGraph(transactions),
+            seed=42,
+            k=1.0,
+            iterations=200,
+            scale=3.0
+        )
 
     G = nx.DiGraph()
     G.add_nodes_from(left_nodes, bipartite=0)
@@ -116,7 +145,7 @@ def generate_pattern_in_graph(G, pattern_type='random'):
 
     G.remove_edge(u, v)
     if pattern_type == 'random':
-        pattern_types = ["Bipartite", "Stacked", "fan_out"]
+        pattern_types = ["Bipartite", "Stacked", "fan_out", "fan_in", "random"]
         pattern_type = random.choice(pattern_types)
 
     pattern_graph, pos = generate_pattern(pattern_type)
