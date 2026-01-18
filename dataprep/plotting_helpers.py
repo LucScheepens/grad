@@ -1,6 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 import networkx as nx
+from pathlib import Path
 
 columns = [
     "Timestamp", "From Bank", "From Account", "To Bank", "To Account",
@@ -195,4 +196,108 @@ def plot_generated_data(G, pos, pattern_type):
     plt.tight_layout()
     plt.show()
 
-    
+
+def plot_graph_from_dict(graph_dict, save_path=None, show=True, dpi=300):
+    """
+    Parameters
+    ----------
+    graph_dict : dict
+        Contains 'start_node', 'nodes', 'transactions' (DataFrame)
+
+    save_path : str or Path or None
+        If provided, saves the figure to this path
+
+    show : bool
+        Whether to display the plot
+
+    dpi : int
+        Resolution for saved image
+    """
+
+    df = graph_dict["transactions"]
+    all_nodes = set(graph_dict["nodes"])
+
+    G = nx.DiGraph()
+
+    laundering_edges = set()
+    laundering_nodes = set()
+    connected_nodes = set()
+
+    # ---- Build graph ----
+    for _, row in df.iterrows():
+        src = row["From_Node"]
+        dst = row["To_Node"]
+
+        G.add_edge(src, dst)
+
+        if row["Is Laundering"] == 1:
+            laundering_edges.add((src, dst))
+            laundering_nodes.update([src, dst])
+
+        if src != dst:
+            connected_nodes.update([src, dst])
+
+    # ---- Collapsed nodes (self-loop only) ----
+    collapsed_nodes = {
+        n for n in all_nodes if n not in connected_nodes
+    }
+
+    # ---- Node colors ----
+    node_colors = []
+    for node in G.nodes():
+        if node in laundering_nodes:
+            node_colors.append("red")
+        elif node in collapsed_nodes:
+            node_colors.append("gray")
+        else:
+            node_colors.append("lightblue")
+
+    # ---- Edge colors ----
+    edge_colors = [
+        "red" if edge in laundering_edges else "black"
+        for edge in G.edges()
+    ]
+
+    # ---- Layout ----
+    pos = nx.spring_layout(G, seed=42, k=0.9)
+
+    # ---- Plot ----
+    plt.figure(figsize=(14, 14))
+    nx.draw_networkx_nodes(
+        G, pos,
+        node_color=node_colors,
+        node_size=600,
+        alpha=0.9
+    )
+    nx.draw_networkx_edges(
+        G, pos,
+        edge_color=edge_colors,
+        arrows=True,
+        alpha=0.7
+    )
+
+    # ---- Highlight start node ----
+    start = graph_dict.get("start_node")
+    if start in G:
+        nx.draw_networkx_nodes(
+            G, pos,
+            node_size=600,
+            edgecolors="black",
+            linewidths=3
+        )
+
+    nx.draw_networkx_labels(G, pos, font_size=7)
+
+    plt.title("Transaction Network (Red = Laundering, Gray = Collapsed)", fontsize=14)
+    plt.axis("off")
+
+    # ---- Save if requested ----
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+    if show:
+        plt.show()
+    else:
+        plt.close()
