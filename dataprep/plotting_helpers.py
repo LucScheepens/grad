@@ -220,27 +220,24 @@ def plot_graph_from_dict(graph_dict, save_path=None, show=True, dpi=300):
     G = nx.DiGraph()
 
     laundering_edges = set()
-    laundering_nodes = set()
+    laundering_nodes = graph_dict.get("laundering_nodes", set())
     connected_nodes = set()
 
     # ---- Build graph ----
     for _, row in df.iterrows():
         src = row["From_Node"]
         dst = row["To_Node"]
-
-        G.add_edge(src, dst)
+        if src != dst:
+            G.add_edge(src, dst)
 
         if row["Is Laundering"] == 1:
             laundering_edges.add((src, dst))
-            laundering_nodes.update([src, dst])
+            # laundering_nodes.update([src, dst])
 
         if src != dst:
             connected_nodes.update([src, dst])
 
-    # ---- Collapsed nodes (self-loop only) ----
-    collapsed_nodes = {
-        n for n in all_nodes if n not in connected_nodes
-    }
+    collapsed_nodes = graph_dict.get("collapsed_nodes", set())
 
     # ---- Node colors ----
     node_colors = []
@@ -259,14 +256,14 @@ def plot_graph_from_dict(graph_dict, save_path=None, show=True, dpi=300):
     ]
 
     # ---- Layout ----
-    pos = nx.spring_layout(G, seed=42, k=0.9)
+    pos = nx.spring_layout(G, seed=42, k=0.4)
 
     # ---- Plot ----
     plt.figure(figsize=(14, 14))
     nx.draw_networkx_nodes(
         G, pos,
         node_color=node_colors,
-        node_size=600,
+        node_size=100,
         alpha=0.9
     )
     nx.draw_networkx_edges(
@@ -281,12 +278,14 @@ def plot_graph_from_dict(graph_dict, save_path=None, show=True, dpi=300):
     if start in G:
         nx.draw_networkx_nodes(
             G, pos,
-            node_size=600,
-            edgecolors="black",
+            nodelist=[start],
+            node_color="yellow",
+            node_size=100,
+            edgecolors=edge_colors,
             linewidths=3
         )
 
-    nx.draw_networkx_labels(G, pos, font_size=7)
+    # nx.draw_networkx_labels(G, pos, font_size=5)
 
     plt.title("Transaction Network (Red = Laundering, Gray = Collapsed)", fontsize=14)
     plt.axis("off")
