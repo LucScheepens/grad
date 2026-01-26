@@ -6,8 +6,10 @@ data/*
 !data/S-FFSD.zip
 !data/YelpChi.zip
 !data/Amazon.zip
-
-pattern_plots/
+igraph_version/laundering_plots/
+igraph_version/non_laundering_plots/
+igraph_version/pattern_plots/
+pattern_plots/  
 entity_pattern_plots/
 suspicious_plots/
 config/base_cfg.yaml
