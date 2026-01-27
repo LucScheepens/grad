@@ -32,8 +32,10 @@ def crop_network(network, crop_ratio=0.8, random_seed=None):
         return network
 
     target_size = max(2, int(len(nodes) * crop_ratio))
-
-    start_node = random.choice(nodes)
+    if network["laundering_nodes"]:
+        start_node = random.choice(network['laundering_nodes'])
+    else:
+        start_node = random.choice(nodes)
 
     try:
         start_vid = g.vs.find(name=start_node).index
@@ -132,7 +134,6 @@ def add_nodes_to_network_incremental(
     boundary = list(current_nodes)
     random.shuffle(boundary)
 
-    from collections import deque
     queue = deque((n, 0) for n in boundary)
 
     while queue and len(new_nodes) < max_new_nodes:
@@ -229,7 +230,7 @@ def augment_network_view_fast(
     if random_seed is not None:
         random.seed(random_seed)
 
-    # 🔥 DO NOT MUTATE ORIGINAL
+    # DO NOT MUTATE ORIGINAL
     aug_net = copy.deepcopy(network)
 
     # --- Crop ---
