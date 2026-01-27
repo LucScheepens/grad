@@ -1,55 +1,65 @@
 import random
 from collections import deque
+import igraph as ig 
+import pandas as pd
+import time
+import copy
 
-def crop_network(network, crop_ratio=0.7, random_seed=None):
-    """
-    Crop a network to a connected subgraph.
-    crop_ratio = fraction of nodes to keep.
-    """
 
+def build_igraph_from_transactions(tx_df):
+    """
+    Build an undirected igraph graph from transactions dataframe.
+    """
+    g = ig.Graph.DataFrame(
+        tx_df[["From_Account_int", "To_Account_int"]],
+        directed=False,
+        use_vids=False
+    )
+    return g
+
+
+def crop_network(network, crop_ratio=0.8, random_seed=None):
     if random_seed is not None:
         random.seed(random_seed)
 
-    nodes = list(network["nodes"])
+    g = network["graph"]
+
+    # --- only nodes that exist in the graph ---
+    graph_nodes = set(v["name"] for v in g.vs)
+    nodes = list(set(network["nodes"]) & graph_nodes)
+
+    if len(nodes) < 2:
+        return network
+
     target_size = max(2, int(len(nodes) * crop_ratio))
 
     start_node = random.choice(nodes)
 
-    visited = set()
-    queue = deque([start_node])
+    try:
+        start_vid = g.vs.find(name=start_node).index
+    except ValueError:
+        # graph is inconsistent → skip crop
+        return network
 
-    # BFS until we hit target size
-    while queue and len(visited) < target_size:
-        node = queue.popleft()
-        if node in visited:
-            continue
+    # --- BFS using igraph ---
+    order = g.bfs(start_vid)[0]
+    bfs_nodes = [g.vs[v]["name"] for v in order if v != -1]
 
-        visited.add(node)
+    cropped_nodes = set(bfs_nodes[:target_size])
 
-        neighbors = set(
-            network["transactions"]
-            .loc[
-                (network["transactions"]["From_Account_int"] == node) |
-                (network["transactions"]["To_Account_int"] == node),
-                ["From_Account_int", "To_Account_int"]
-            ]
-            .values
-            .ravel()
-        )
-
-        neighbors &= set(nodes)
-
-        for nbr in neighbors:
-            if nbr not in visited:
-                queue.append(nbr)
-
-    cropped_nodes = visited
-
-    # Filter transactions
-    cropped_tx = network["transactions"][
-        network["transactions"]["From_Account_int"].isin(cropped_nodes) &
-        network["transactions"]["To_Account_int"].isin(cropped_nodes)
+    # --- filter transactions ---
+    tx = network["transactions"]
+    cropped_tx = tx[
+        tx["From_Account_int"].isin(cropped_nodes) &
+        tx["To_Account_int"].isin(cropped_nodes)
     ].copy()
+
+    # --- rebuild graph from cropped_tx ---
+    g_sub = ig.Graph.DataFrame(
+        cropped_tx[["From_Account_int", "To_Account_int"]],
+        directed=False,
+        use_vids=False
+    )
 
     return {
         **network,
@@ -57,105 +67,87 @@ def crop_network(network, crop_ratio=0.7, random_seed=None):
         "nodes": cropped_nodes,
         "laundering_nodes": network["laundering_nodes"] & cropped_nodes,
         "collapsed_nodes": network["collapsed_nodes"] & cropped_nodes,
-        "node_depths": {n: d for n, d in network["node_depths"].items() if n in cropped_nodes},
-        "transactions": cropped_tx
+        "node_depths": {
+            n: d for n, d in network["node_depths"].items()
+            if n in cropped_nodes
+        },
+        "transactions": cropped_tx,
+        "graph": g_sub
     }
 
 
-def delete_random_edges(network, delete_frac=0.15, random_seed=None):
-    """
-    Randomly delete edges without splitting the network.
-    delete_frac = fraction of edges to attempt to delete.
-    """
 
+def delete_random_edges_bridge_safe(network, delete_frac=0.15, random_seed=None):
     if random_seed is not None:
         random.seed(random_seed)
 
+    g = network["graph"].copy()
     tx = network["transactions"].copy()
-    nodes = list(network["nodes"])
 
-    if len(tx) < 2:
-        return network  # nothing to delete safely
+    if g.ecount() < 2:
+        return network
 
-    # Build igraph
-    g = ig.Graph.DataFrame(
-        tx[["From_Account_int", "To_Account_int"]],
-        directed=False,
-        use_vids=False
-    )
+    bridges = set(g.bridges())
+    non_bridges = [i for i in range(g.ecount()) if i not in bridges]
 
-    target_deletions = int(len(tx) * delete_frac)
-    edge_indices = list(range(g.ecount()))
-    random.shuffle(edge_indices)
+    if not non_bridges:
+        return network
 
-    deleted = 0
-    kept_edges = set(range(g.ecount()))
+    target_deletions = int(len(non_bridges) * delete_frac)
+    random.shuffle(non_bridges)
 
-    for ei in edge_indices:
-        if deleted >= target_deletions:
-            break
+    delete_eids = non_bridges[:target_deletions]
 
-        g_test = g.copy()
-        g_test.delete_edges([ei])
+    # Drop from graph
+    g.delete_edges(delete_eids)
 
-        # Check connectivity
-        if g_test.is_connected():
-            kept_edges.remove(ei)
-            g = g_test
-            deleted += 1
-
-    # Rebuild transactions from kept edges
-    kept_edge_list = list(kept_edges)
-    kept_edges_df = tx.iloc[kept_edge_list].copy()
+    # Drop same rows from transactions (assumes same order)
+    tx = tx.drop(tx.index[delete_eids]).reset_index(drop=True)
 
     return {
         **network,
-        "transactions": kept_edges_df
+        "transactions": tx,
+        "graph": g
     }
 
 
-def add_nodes_to_network(
+def add_nodes_to_network_incremental(
     network,
-    full_df,
+    full_graph,
     max_new_nodes=10,
     max_depth=2,
     collapse_threshold=10,
     random_seed=None
 ):
-    """
-    Expand a network by adding new nodes from the full graph.
-    whilst respecting hubs.
-    """
-
     if random_seed is not None:
         random.seed(random_seed)
 
+    g = network["graph"].copy()
+
     current_nodes = set(network["nodes"])
-    new_nodes = set()
     collapsed_nodes = set(network["collapsed_nodes"])
+    new_nodes = set()
 
-    # Build adjacency from full_df
-    adj = {}
-    for _, row in full_df.iterrows():
-        u = row["From_Account_int"]
-        v = row["To_Account_int"]
-        adj.setdefault(u, set()).add(v)
-        adj.setdefault(v, set()).add(u)
-
+    # ---- frontier BFS ----
     boundary = list(current_nodes)
     random.shuffle(boundary)
 
+    from collections import deque
     queue = deque((n, 0) for n in boundary)
 
     while queue and len(new_nodes) < max_new_nodes:
         node, depth = queue.popleft()
-
         if depth >= max_depth:
             continue
 
-        neighbors = adj.get(node, set())
+        try:
+            vid = full_graph.vs.find(name=node).index
+        except ValueError:
+            continue
 
-        # Collapse hubs
+        neighbors_vids = full_graph.neighbors(vid)
+        neighbors = {full_graph.vs[v]["name"] for v in neighbors_vids}
+
         if len(neighbors) > collapse_threshold:
             collapsed_nodes.add(node)
             continue
@@ -164,25 +156,100 @@ def add_nodes_to_network(
             if nbr not in current_nodes and nbr not in new_nodes:
                 new_nodes.add(nbr)
                 queue.append((nbr, depth + 1))
-
                 if len(new_nodes) >= max_new_nodes:
                     break
 
-    augmented_nodes = current_nodes | new_nodes
+    if not new_nodes:
+        return network
 
-    # Filter transactions
-    augmented_tx = full_df[
-        full_df["From_Account_int"].isin(augmented_nodes) &
-        full_df["To_Account_int"].isin(augmented_nodes)
-    ].copy()
+    # ---- add vertices ----
+    for n in new_nodes:
+        if n not in g.vs["name"]:
+            g.add_vertex(name=n)
+
+    # ---- name → index mapping ----
+    name_to_vid = {v["name"]: v.index for v in g.vs}
+
+    # ---- add edges safely ----
+    edges_to_add = []
+
+    for n in new_nodes:
+        try:
+            vid = full_graph.vs.find(name=n).index
+        except ValueError:
+            continue
+
+        for nbr_vid in full_graph.neighbors(vid):
+            nbr = full_graph.vs[nbr_vid]["name"]
+            if nbr in current_nodes or nbr in new_nodes:
+                if n in name_to_vid and nbr in name_to_vid:
+                    edges_to_add.append(
+                        (name_to_vid[n], name_to_vid[nbr])
+                    )
+
+    if edges_to_add:
+        g.add_edges(edges_to_add)
+
+    # ---- update transactions ----
+    tx = network["transactions"].copy()
+    new_tx = [
+        {"From_Account_int": g.vs[e[0]]["name"],
+         "To_Account_int": g.vs[e[1]]["name"]}
+        for e in edges_to_add
+    ]
+
+    if new_tx:
+        tx = pd.concat([tx, pd.DataFrame(new_tx)], ignore_index=True)
 
     return {
         **network,
-        "nodes": augmented_nodes,
+        "nodes": current_nodes | new_nodes,
         "collapsed_nodes": collapsed_nodes,
         "node_depths": {
             **network["node_depths"],
-            **{n: None for n in new_nodes}  # unknown depth for added nodes
+            **{n: None for n in new_nodes}
         },
-        "transactions": augmented_tx
+        "transactions": tx,
+        "graph": g
     }
+
+
+
+def augment_network_view_fast(
+    network,
+    full_graph,
+    p_crop=0.6,
+    p_edge_drop=0.2,
+    p_node_add=0.2,
+    crop_ratio_range=(0.6, 0.9),
+    edge_drop_range=(0.05, 0.2),
+    max_new_nodes=10,
+    random_seed=None
+):
+    if random_seed is not None:
+        random.seed(random_seed)
+
+    # 🔥 DO NOT MUTATE ORIGINAL
+    aug_net = copy.deepcopy(network)
+
+    # --- Crop ---
+    if random.random() < p_crop:
+        ratio = random.uniform(*crop_ratio_range)
+        aug_net = crop_network(aug_net, crop_ratio=ratio)
+
+    # --- Edge drop ---
+    if random.random() < p_edge_drop:
+        frac = random.uniform(*edge_drop_range)
+        aug_net = delete_random_edges_bridge_safe(aug_net, delete_frac=frac)
+
+    # --- Node add ---
+    if random.random() < p_node_add:
+        aug_net = add_nodes_to_network_incremental(
+            aug_net,
+            full_graph=full_graph,
+            max_new_nodes=max_new_nodes
+        )
+
+    return aug_net
+
+
