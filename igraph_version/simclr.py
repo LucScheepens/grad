@@ -1,3 +1,4 @@
+import os
 import random
 import torch
 from torch_geometric.data import Data, Batch
@@ -124,13 +125,21 @@ def train_simclr_fast(
     optimizer,
     device,
     batch_size=8,
-    epochs=50
+    epochs=50,
+    checkpoint_dir="model_checkpoints",
+    checkpoint_interval=10
 ):
     encoder.train()
     projector.train()
 
     # 🔥 Build graphs ONCE
     full_graph = prepare_networks(networks, full_df)
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    best_loss = float('inf')
+    best_encoder_state = None
+    best_projector_state = None
 
     for epoch in range(epochs):
         print(f"Epoch {epoch + 1}/{epochs}")
@@ -142,7 +151,6 @@ def train_simclr_fast(
 
             views1 = []
             views2 = []
-            print(f" Processing batch {i // batch_size + 1}/{(len(networks) + batch_size - 1) // batch_size}")
             for net in batch:
                 v1 = augment_network_view_fast(net, full_graph)
                 v2 = augment_network_view_fast(net, full_graph)
@@ -167,4 +175,33 @@ def train_simclr_fast(
 
             total_loss += loss.item()
 
-        print(f"Epoch {epoch + 1}: loss = {total_loss:.4f}")
+        avg_loss = total_loss / ((len(networks) + batch_size - 1) // batch_size)
+        print(f"Epoch {epoch + 1}: avg loss = {avg_loss:.4f}")
+
+        # ✅ Save checkpoint every N epochs
+        if (epoch + 1) % checkpoint_interval == 0:
+            checkpoint_path = os.path.join(checkpoint_dir, f"epoch_{epoch + 1}.pt")
+            torch.save({
+                'encoder_state_dict': encoder.state_dict(),
+                'projector_state_dict': projector.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch': epoch + 1,
+                'loss': avg_loss
+            }, checkpoint_path)
+            print(f"Checkpoint saved at {checkpoint_path}")
+
+        # ✅ Track best model
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_encoder_state = encoder.state_dict()
+            best_projector_state = projector.state_dict()
+            print(f"New best model at epoch {epoch + 1} with loss {best_loss:.4f}")
+
+    # 🔥 Save best model at the end
+    best_model_path = os.path.join(checkpoint_dir, "best_model.pt")
+    torch.save({
+        'encoder_state_dict': best_encoder_state,
+        'projector_state_dict': best_projector_state,
+        'loss': best_loss
+    }, best_model_path)
+    print(f"Best model saved at {best_model_path} with loss {best_loss:.4f}")
