@@ -1,5 +1,15 @@
 from igraph import Graph, plot
 from pathlib import Path
+import torch
+import numpy as np
+import umap
+import matplotlib.pyplot as plt
+
+from torch_geometric.data import Batch
+
+from augmentation import augment_network_view_fast
+from simclr import GraphEncoder, prepare_networks, network_to_pyg_data_fast
+
 
 def plot_graph_from_dict_igraph(graph_dict, save_path=None, show=True, dpi=300):
     """
@@ -113,3 +123,76 @@ def plot_graph_from_dict_igraph(graph_dict, save_path=None, show=True, dpi=300):
     if show:
         plot(G, **visual_style)
 
+
+
+def plot_simclr_latent_space_laundering_vs_clean(
+    networks,
+    df_full
+):
+    """
+    Plot the SimCLR encoder latent space, colored by presence of laundering nodes.
+    """ 
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    checkpoint = torch.load("model_checkpoints/best_model_run1.pt", map_location=device)
+
+    encoder = GraphEncoder(in_dim=3, hidden_dim=64, out_dim=128).to(device)
+    encoder.load_state_dict(checkpoint["encoder_state_dict"])
+    encoder.eval()
+
+    full_graph = prepare_networks(networks, df_full)
+
+    graphs = []
+    labels = []   # 1 = laundering present, 0 = none
+
+    for net in networks:
+        v = augment_network_view_fast(net, full_graph)
+        graphs.append(network_to_pyg_data_fast(v))
+
+        has_laundering = len(net["laundering_nodes"]) > 0
+        labels.append(int(has_laundering))
+
+    labels = np.array(labels)
+
+    data = Batch.from_data_list(graphs).to(device)
+
+    with torch.no_grad():
+        h = encoder(data)
+
+    H = h.cpu().numpy()
+
+    # Normalize (important for contrastive models)
+    H = H / np.linalg.norm(H, axis=1, keepdims=True)
+
+    reducer = umap.UMAP(
+        n_neighbors=15,
+        min_dist=0.1,
+        metric="cosine",
+        random_state=42
+    )
+
+    H_2d = reducer.fit_transform(H)
+
+    plt.figure(figsize=(8, 8))
+
+    scatter = plt.scatter(
+        H_2d[:, 0],
+        H_2d[:, 1],
+        c=labels,
+        cmap="coolwarm",   # blue = non-laundering, red = laundering
+        s=30,
+        alpha=0.85
+    )
+
+    plt.title("SimCLR Encoder Latent Space\nRed = Laundering Networks | Blue = Clean Networks")
+    plt.xticks([])
+    plt.yticks([])
+
+    cbar = plt.colorbar(scatter, ticks=[0, 1])
+    cbar.ax.set_yticklabels(["No laundering nodes", "Has laundering nodes"])
+
+    plt.tight_layout()
+    plt.show()
+
+    plt.savefig("simclr_latent_space_laundering_vs_clean.png", dpi=300)

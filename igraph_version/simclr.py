@@ -117,6 +117,13 @@ def nt_xent_loss(z1, z2, temperature=0.5):
     return loss.mean()
 
 
+import time
+import os
+import random
+import torch
+from torch_geometric.data import Batch
+
+
 def train_simclr_fast(
     networks,
     full_df,
@@ -136,17 +143,28 @@ def train_simclr_fast(
     full_graph = prepare_networks(networks, full_df)
 
     os.makedirs(checkpoint_dir, exist_ok=True)
-    
+
     best_loss = float('inf')
     best_encoder_state = None
     best_projector_state = None
+    best_epoch = None
+
+    # ⏱️ Timing containers
+    start_time = time.time()
+    epoch_times = []
+    total_batches = 0
 
     for epoch in range(epochs):
+        epoch_start = time.time()
+
         print(f"Epoch {epoch + 1}/{epochs}")
         random.shuffle(networks)
         total_loss = 0.0
 
         for i in range(0, len(networks), batch_size):
+            batch_start = time.time()
+            total_batches += 1
+
             batch = networks[i:i + batch_size]
 
             views1 = []
@@ -176,7 +194,10 @@ def train_simclr_fast(
             total_loss += loss.item()
 
         avg_loss = total_loss / ((len(networks) + batch_size - 1) // batch_size)
-        print(f"Epoch {epoch + 1}: avg loss = {avg_loss:.4f}")
+        epoch_time = time.time() - epoch_start
+        epoch_times.append(epoch_time)
+
+        print(f"Epoch {epoch + 1}: avg loss = {avg_loss:.4f} | time = {epoch_time:.2f}s")
 
         # ✅ Save checkpoint every N epochs
         if (epoch + 1) % checkpoint_interval == 0:
@@ -195,6 +216,7 @@ def train_simclr_fast(
             best_loss = avg_loss
             best_encoder_state = encoder.state_dict()
             best_projector_state = projector.state_dict()
+            best_epoch = epoch + 1
             print(f"New best model at epoch {epoch + 1} with loss {best_loss:.4f}")
 
     # 🔥 Save best model at the end
@@ -204,4 +226,8 @@ def train_simclr_fast(
         'projector_state_dict': best_projector_state,
         'loss': best_loss
     }, best_model_path)
+
+    total_time = time.time() - start_time
+
     print(f"Best model saved at {best_model_path} with loss {best_loss:.4f}")
+    print(f"Total training time: {total_time:.2f}s")
